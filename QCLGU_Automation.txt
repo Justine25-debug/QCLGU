@@ -770,7 +770,11 @@ if ($selectedParts -contains 5) {
 Write-Host "`n--- All Tasks Completed ---" -ForegroundColor Cyan
 
     $runAgain = Read-Host "Return to task menu? (Y/N)"
-    if ($runAgain -notmatch '^[Yy]$') { break }
+    if ($runAgain -match '^[Yy]$') {
+        Clear-Host
+        continue
+    }
+    break
 } while ($true)
 
 Write-Host "Exiting automation menu." -ForegroundColor Cyan

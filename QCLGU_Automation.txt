@@ -29,212 +29,7 @@ exit /b
 # POWERSHELL SECTION (The Engine)
 # =====================================================================
 
-# --- Helper Function to Bypass Google Drive Virus Scan Warnings ---
-function Invoke-GDriveDownload {
-    param (
-        [Parameter(Mandatory=$true)][string]$FileId,
-        [Parameter(Mandatory=$true)][string]$OutFilePath
-    )
-    $BaseUri = "https://drive.google.com/uc?export=download&id=$FileId"
-    $requestTimeoutSec = 45
-    $Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    $TempPath = "$OutFilePath.tmp"
-
-    function Test-ZipSignature {
-        param([Parameter(Mandatory=$true)][string]$Path)
-        if (-not (Test-Path $Path)) { return $false }
-        $fileInfo = Get-Item -Path $Path -ErrorAction SilentlyContinue
-        if (-not $fileInfo -or $fileInfo.Length -lt 2) { return $false }
-
-        $fs = $null
-        try {
-            $fs = [System.IO.File]::OpenRead($Path)
-            $buffer = New-Object byte[] 2
-            [void]$fs.Read($buffer, 0, 2)
-            $hexString = [System.BitConverter]::ToString($buffer)
-            return $hexString -eq "50-4B"
-        } finally {
-            if ($fs) { $fs.Close() }
-        }
-    }
-
-    # 1) Initial request
-    Invoke-WebRequest -Uri $BaseUri -WebSession $Session -OutFile $TempPath -UseBasicParsing -TimeoutSec $requestTimeoutSec -ErrorAction Stop
-
-    # 2) If already a zip, finish now
-    if (Test-ZipSignature -Path $TempPath) {
-        Move-Item -Path $TempPath -Destination $OutFilePath -Force
-        return
-    }
-
-    Write-Host "  -> Intercepted Google Drive warning page. Attempting bypass..." -ForegroundColor DarkGray
-
-    $htmlContent = Get-Content -Path $TempPath -Raw -ErrorAction SilentlyContinue
-
-    # 3) Attempt to get confirm token from cookies first
-    $token = $null
-    try {
-        $allCookies = @(
-            $Session.Cookies.GetCookies([uri]"https://drive.google.com")
-            $Session.Cookies.GetCookies([uri]"https://docs.google.com")
-        )
-        $cookieMatch = $allCookies | Where-Object { $_.Name -like "download_warning*" } | Select-Object -First 1
-        if ($cookieMatch) { $token = $cookieMatch.Value }
-    } catch { }
-
-    # 4) Fallback token parsing from HTML
-    if (-not $token) {
-        if ($htmlContent -match 'confirm=([a-zA-Z0-9_-]+)') {
-            $token = $Matches[1]
-        }
-        elseif ($htmlContent -match 'name="confirm"\s+value="([^"]+)"') {
-            $token = $Matches[1]
-        }
-    }
-
-    # 5) Build best possible follow-up URL from modern Google Drive warning page
-    $FinalUri = $null
-    if ($token) {
-        $FinalUri = "https://drive.google.com/uc?export=download&id=$FileId&confirm=$token"
-    }
-
-    if (-not $FinalUri) {
-        # Newer warning page pattern: action="https://drive.usercontent.google.com/download" + hidden inputs
-        $actionMatch = [regex]::Match($htmlContent, 'action="(https://drive\.usercontent\.google\.com/download[^"]*)"')
-        if ($actionMatch.Success) {
-            $confirmVal = [regex]::Match($htmlContent, 'name="confirm"\s+value="([^"]+)"')
-            $uuidVal = [regex]::Match($htmlContent, 'name="uuid"\s+value="([^"]+)"')
-
-            $queryParts = @(
-                "id=$([System.Uri]::EscapeDataString($FileId))",
-                "export=download"
-            )
-            if ($confirmVal.Success) { $queryParts += "confirm=$([System.Uri]::EscapeDataString($confirmVal.Groups[1].Value))" }
-            if ($uuidVal.Success) { $queryParts += "uuid=$([System.Uri]::EscapeDataString($uuidVal.Groups[1].Value))" }
-
-            $FinalUri = "$($actionMatch.Groups[1].Value)?$($queryParts -join '&')"
-        }
-    }
-
-    if (-not $FinalUri) {
-        # Legacy fallback: direct /uc link in HTML
-        $hrefMatch = [regex]::Match($htmlContent, 'href="(/uc\?export=download[^"]+)"')
-        if ($hrefMatch.Success) {
-            $decoded = $hrefMatch.Groups[1].Value.Replace('&amp;', '&')
-            $FinalUri = "https://drive.google.com$decoded"
-        }
-    }
-
-    # 6) Build a candidate list of URLs and try each until a valid ZIP is received
-    $candidateUris = New-Object System.Collections.Generic.List[string]
-    if ($FinalUri) { [void]$candidateUris.Add($FinalUri) }
-
-    $uuidFromHtml = $null
-    if ($htmlContent -match 'name="uuid"\s+value="([^"]+)"') {
-        $uuidFromHtml = $Matches[1]
-    }
-
-    if ($token) {
-        [void]$candidateUris.Add("https://drive.google.com/uc?export=download&id=$FileId&confirm=$token")
-        [void]$candidateUris.Add("https://drive.usercontent.google.com/download?id=$FileId&export=download&confirm=$token")
-    }
-
-    [void]$candidateUris.Add("https://drive.google.com/uc?export=download&id=$FileId&confirm=t")
-    [void]$candidateUris.Add("https://drive.usercontent.google.com/download?id=$FileId&export=download&confirm=t")
-    if ($uuidFromHtml) {
-        [void]$candidateUris.Add("https://drive.usercontent.google.com/download?id=$FileId&export=download&confirm=t&uuid=$([System.Uri]::EscapeDataString($uuidFromHtml))")
-    }
-
-    # Generic form action fallback: include only known-safe hidden inputs as query parameters
-    $formActionMatch = [regex]::Match($htmlContent, '<form[^>]+action="([^"]+)"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    if ($formActionMatch.Success) {
-        $formAction = $formActionMatch.Groups[1].Value
-        if ($formAction.StartsWith('/')) { $formAction = "https://drive.google.com$formAction" }
-
-        $hiddenInputRegex = '<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"[^>]*>'
-        $hiddenInputs = [regex]::Matches($htmlContent, $hiddenInputRegex, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        $allowedKeys = @('id','confirm','uuid','export','authuser')
-        $queryParts = @()
-        foreach ($input in $hiddenInputs) {
-            $n = $input.Groups[1].Value
-            $v = $input.Groups[2].Value
-            if (-not [string]::IsNullOrWhiteSpace($n) -and ($allowedKeys -contains $n.ToLowerInvariant())) {
-                $queryParts += "$([System.Uri]::EscapeDataString($n))=$([System.Uri]::EscapeDataString($v))"
-            }
-        }
-        if ($queryParts.Count -gt 0) {
-            $candidateFromForm = "$formAction?$($queryParts -join '&')"
-            if ($candidateFromForm.Length -lt 2048) {
-                $candidateUris.Add($candidateFromForm) | Out-Null
-            }
-        }
-    }
-
-    $tried = @()
-    foreach ($uri in $candidateUris) {
-        if ([string]::IsNullOrWhiteSpace($uri)) { continue }
-        if ($tried -contains $uri) { continue }
-        $tried += $uri
-
-        try {
-            Invoke-WebRequest -Uri $uri -WebSession $Session -OutFile $OutFilePath -UseBasicParsing -TimeoutSec $requestTimeoutSec -ErrorAction Stop
-            if (Test-ZipSignature -Path $OutFilePath) {
-                Remove-Item -Path $TempPath -Force -ErrorAction SilentlyContinue
-                return
-            }
-            Remove-Item -Path $OutFilePath -Force -ErrorAction SilentlyContinue
-        } catch {
-            # Try next candidate URI
-        }
-    }
-
-    Remove-Item -Path $TempPath -Force -ErrorAction SilentlyContinue
-    throw "Downloaded file is not a valid ZIP archive (Google Drive returned HTML or a blocked response)."
-}
-
-# --- Helper Function to Resolve an Item ID from a Public Google Drive Folder ---
-function Get-GDriveItemFromFolderByName {
-    param(
-        [Parameter(Mandatory=$true)][string]$FolderId,
-        [Parameter(Mandatory=$true)][string]$ItemName
-    )
-
-    $embeddedUri = "https://drive.google.com/embeddedfolderview?id=$FolderId#list"
-    $response = Invoke-WebRequest -Uri $embeddedUri -UseBasicParsing -ErrorAction Stop
-    $html = $response.Content
-
-    $anchorRegex = '<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
-    $matches = [regex]::Matches($html, $anchorRegex, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-
-    foreach ($m in $matches) {
-        $href = $m.Groups[1].Value
-        $nameRaw = $m.Groups[2].Value
-        $nameClean = [System.Text.RegularExpressions.Regex]::Replace($nameRaw, '<.*?>', '')
-        $nameClean = [System.Net.WebUtility]::HtmlDecode($nameClean).Trim()
-
-        if ([string]::IsNullOrWhiteSpace($nameClean)) { continue }
-
-        if ($nameClean -like "*$ItemName*") {
-            $idMatch = [regex]::Match($href, '/file/d/([a-zA-Z0-9_-]+)')
-            $itemType = "File"
-            if (-not $idMatch.Success) {
-                $idMatch = [regex]::Match($href, '/drive/folders/([a-zA-Z0-9_-]+)')
-                $itemType = "Folder"
-            }
-
-            if ($idMatch.Success) {
-                return [pscustomobject]@{
-                    Name = $nameClean
-                    Id   = $idMatch.Groups[1].Value
-                    Type = $itemType
-                }
-            }
-        }
-    }
-
-    return $null
-}
-
+# --- Helper Function for ZIP Verification ---
 function Test-ZipFile {
     param([Parameter(Mandatory=$true)][string]$Path)
 
@@ -259,12 +54,30 @@ function Test-ZipFile {
 
 # --- Global Directory Setup ---
 $baseDir = Join-Path $env:USERPROFILE "Downloads"
-$sharedDriveFolderId = "1_o7vHTNPyofzaiPgXAyeZg_jxRGeKG8R"
 Write-Host "`n--- Setting up Base Directory ---" -ForegroundColor Cyan
 Write-Host "Using base directory at: $baseDir" -ForegroundColor Green
 
 do {
     $currentHostName = $env:COMPUTERNAME
+
+    # --- System Status Header: Hostname & Processes ---
+    # Regex lookups for common process names tied to TM and CS
+    $tmProcesses = Get-Process | Where-Object { $_.ProcessName -match '(?i)TmListen|ntrtscan|TMBMSRV|TmCCSF|pccNTMon|ds_agent|coreServiceShell|uiWatchDog|Trend' } -ErrorAction SilentlyContinue
+    $csProcesses = Get-Process | Where-Object { $_.ProcessName -match '(?i)CSFalconService|csagent|falcon|CSConfigService' } -ErrorAction SilentlyContinue
+
+    $tmStatus = if ($tmProcesses) { "DETECTED (Running)" } else { "Not Detected" }
+    $csStatus = if ($csProcesses) { "DETECTED (Running)" } else { "Not Detected" }
+    
+    $tmColor = if ($tmProcesses) { "Yellow" } else { "Green" }
+    $csColor = if ($csProcesses) { "Yellow" } else { "Green" }
+
+    Write-Host "`n===============================================" -ForegroundColor Gray
+    Write-Host " SYSTEM STATUS HEADER" -ForegroundColor Cyan
+    Write-Host "===============================================" -ForegroundColor Gray
+    Write-Host " Hostname    : " -NoNewline; Write-Host $currentHostName -ForegroundColor White
+    Write-Host " Trend Micro : " -NoNewline; Write-Host $tmStatus -ForegroundColor $tmColor
+    Write-Host " CrowdStrike : " -NoNewline; Write-Host $csStatus -ForegroundColor $csColor
+    Write-Host "===============================================" -ForegroundColor Gray
 
     Write-Host "`n--- Task Selection ---" -ForegroundColor Cyan
     Write-Host "[1] Hostname Configuration"
@@ -418,8 +231,6 @@ if ($allApps.Count -eq 0) {
                         try {
                             Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$uninstallString`"" -Wait -NoNewWindow
                             Write-Host "Finished." -ForegroundColor Green
-                            
-                            # Web blocklist only 
                         } catch {
                             Write-Error "Failed to launch uninstaller for $($targetApp.DisplayName)."
                         }
@@ -451,8 +262,6 @@ if ($allApps.Count -eq 0) {
                         try {
                             Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$uninstallString`"" -Wait -NoNewWindow
                             Write-Host "Uninstallation process finished/closed." -ForegroundColor Green
-                            
-                            # Web blocklist only
                         } catch {
                             Write-Error "Failed to launch uninstaller for $($selectedApp.DisplayName)."
                         }

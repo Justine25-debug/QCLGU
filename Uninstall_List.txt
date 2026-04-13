@@ -24,3 +24,4 @@ WebAdvisor
 ByteFence
 Driver Booster
 VPN
+TrendMicro

@@ -295,6 +295,8 @@ do {
         continue
     }
 
+    Clear-Host
+
 # PART 1: Change Hostname
 if ($selectedParts -contains 1) {
     Write-Host "`n--- Hostname Configuration ---" -ForegroundColor Cyan
@@ -689,7 +691,7 @@ if ($selectedParts -contains 5) {
             Set-Location -Path (Split-Path $csTargetExe -Parent)
             
             # Launches the installer
-            Start-Process -FilePath $csTargetExe
+            Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
             
             Write-Host "`n[NOTICE] The CrowdStrike Installer has been launched in a separate window." -ForegroundColor Yellow
             Write-Host "Please complete the installation steps in that window." -ForegroundColor Gray
@@ -743,7 +745,7 @@ if ($selectedParts -contains 5) {
                 $csTargetExe = $csTargetExeInfo.FullName
                 Write-Host "Launching CrowdStrike Installer from $csTargetExe..." -ForegroundColor Magenta
                 Set-Location -Path (Split-Path $csTargetExe -Parent)
-                Start-Process -FilePath $csTargetExe
+                Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
 
                 Write-Host "`n[NOTICE] The CrowdStrike Installer has been launched in a separate window." -ForegroundColor Yellow
                 Write-Host "Please complete the installation steps in that window." -ForegroundColor Gray
@@ -758,7 +760,7 @@ if ($selectedParts -contains 5) {
             $csTargetExe = $csTargetExeInfo.FullName
             Write-Host "Launching CrowdStrike Installer from $csTargetExe..." -ForegroundColor Magenta
             Set-Location -Path (Split-Path $csTargetExe -Parent)
-            Start-Process -FilePath $csTargetExe
+            Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
         } else {
             Write-Error "Failed to prepare or execute CrowdStrike Installer. Error: $_"
         }

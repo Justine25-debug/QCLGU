@@ -59,9 +59,9 @@ Write-Host "Using base directory at: $baseDir" -ForegroundColor Green
 
 do {
     $currentHostName = $env:COMPUTERNAME
+    $currentUserName = $env:USERNAME
 
     # --- System Status Header: Hostname & Processes ---
-    # Regex lookups for common process names tied to TM and CS
     $tmProcesses = Get-Process | Where-Object { $_.ProcessName -match '(?i)TmListen|ntrtscan|TMBMSRV|TmCCSF|pccNTMon|ds_agent|coreServiceShell|uiWatchDog|Trend' } -ErrorAction SilentlyContinue
     $csProcesses = Get-Process | Where-Object { $_.ProcessName -match '(?i)CSFalconService|csagent|falcon|CSConfigService' } -ErrorAction SilentlyContinue
 
@@ -75,6 +75,7 @@ do {
     Write-Host " SYSTEM STATUS HEADER" -ForegroundColor Cyan
     Write-Host "===============================================" -ForegroundColor Gray
     Write-Host " Hostname    : " -NoNewline; Write-Host $currentHostName -ForegroundColor White
+    Write-Host " User Name   : " -NoNewline; Write-Host $currentUserName -ForegroundColor White
     Write-Host " Trend Micro : " -NoNewline; Write-Host $tmStatus -ForegroundColor $tmColor
     Write-Host " CrowdStrike : " -NoNewline; Write-Host $csStatus -ForegroundColor $csColor
     Write-Host "===============================================" -ForegroundColor Gray
@@ -385,7 +386,6 @@ if ($selectedParts -contains 4) {
     } catch {
         Write-Warning "Failed to query GitHub API for latest release. Will attempt manual fallback."
     }
-    # -------------------------------------------
     
     try {
         $tmTargetExeInfo = Get-ChildItem -Path $tmExtractPath -Filter $tmExeName -Recurse | Select-Object -First 1
@@ -395,114 +395,41 @@ if ($selectedParts -contains 4) {
             $tmTargetExe = $tmTargetExeInfo.FullName
             Write-Host "Launching Trend Micro Uninstaller from $tmTargetExe..." -ForegroundColor Magenta
             Set-Location -Path (Split-Path $tmTargetExe -Parent)
-            
-            # Launches the uninstaller
             Start-Process -FilePath $tmTargetExe
-            
             Write-Host "`n[NOTICE] The Trend Micro Uninstaller has been launched in a separate window." -ForegroundColor Yellow
-            Write-Host "Please complete the uninstallation steps in that window." -ForegroundColor Gray
         } else {
             Write-Host "Downloading Trend Micro package from GitHub Release..." -ForegroundColor Magenta
-
             $isZip = $false
             if (Test-Path $tmZipPath) {
                 if (Test-ZipFile -Path $tmZipPath) {
                     Write-Host "Existing Trend Micro ZIP found at $tmZipPath. Skipping download." -ForegroundColor Green
                     $isZip = $true
                 } else {
-                    Write-Warning "Existing TM_Uninstaller.zip is invalid. Re-downloading..."
                     Remove-Item -Path $tmZipPath -Force -ErrorAction SilentlyContinue
                 }
             }
 
-            if (-not $isZip) {
-                if ($tmGithubAssetUrl) {
-                    Invoke-WebRequest -Uri $tmGithubAssetUrl -OutFile $tmZipPath -UseBasicParsing -TimeoutSec 300 -Headers @{ "User-Agent" = "Mozilla/5.0" } -ErrorAction Stop
-                    $isZip = Test-ZipFile -Path $tmZipPath
-                }
+            if (-not $isZip -and $tmGithubAssetUrl) {
+                Invoke-WebRequest -Uri $tmGithubAssetUrl -OutFile $tmZipPath -UseBasicParsing -TimeoutSec 300 -Headers @{ "User-Agent" = "Mozilla/5.0" } -ErrorAction Stop
+                $isZip = Test-ZipFile -Path $tmZipPath
             }
 
             if (-not $isZip) {
-                Write-Warning "Direct GitHub request did not return a ZIP. Opening browser for manual download from release page."
                 Start-Process $tmManualUrl
-                Read-Host "Download the Trend Micro ZIP from the opened page, then press Enter to continue"
-
-                $downloadedTmZip = Get-ChildItem -Path $baseDir -Filter "*TM*Uninstall*.zip" -File -ErrorAction SilentlyContinue |
-                    Sort-Object LastWriteTime -Descending |
-                    Select-Object -First 1
-
-                if (-not $downloadedTmZip) {
-                    $downloadedTmZip = Get-ChildItem -Path $baseDir -Filter "*.zip" -File -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTime -Descending |
-                        Select-Object -First 1
-                }
-
-                if (-not $downloadedTmZip) {
-                    throw "No ZIP file found in Downloads after manual GitHub step."
-                }
-
-                Copy-Item -Path $downloadedTmZip.FullName -Destination $tmZipPath -Force
-                Write-Host "Using manually downloaded ZIP: $($downloadedTmZip.FullName)" -ForegroundColor Green
+                Read-Host "Download the Trend Micro ZIP manually, then press Enter to continue"
+                $downloadedTmZip = Get-ChildItem -Path $baseDir -Filter "*TM*Uninstall*.zip" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($downloadedTmZip) { Copy-Item -Path $downloadedTmZip.FullName -Destination $tmZipPath -Force }
             }
 
-            Write-Host "Download complete. Extracting $tmZipPath..." -ForegroundColor Green
             Expand-Archive -Path $tmZipPath -DestinationPath $tmExtractPath -Force
-
             $tmTargetExeInfo = Get-ChildItem -Path $tmExtractPath -Filter $tmExeName -Recurse | Select-Object -First 1
             if ($tmTargetExeInfo) {
                 $tmTargetExe = $tmTargetExeInfo.FullName
-                Write-Host "Launching Trend Micro Uninstaller from $tmTargetExe..." -ForegroundColor Magenta
                 Set-Location -Path (Split-Path $tmTargetExe -Parent)
                 Start-Process -FilePath $tmTargetExe
-
-                Write-Host "`n[NOTICE] The Trend Micro Uninstaller has been launched in a separate window." -ForegroundColor Yellow
-                Write-Host "Please complete the uninstallation steps in that window." -ForegroundColor Gray
-            } else {
-                Write-Host "Error: Could not find $tmExeName within the downloaded archive." -ForegroundColor Red
             }
         }
-    } catch {
-        $tmRecovered = $false
-        $tmTargetExeInfo = Get-ChildItem -Path $tmExtractPath -Filter $tmExeName -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($tmTargetExeInfo) {
-            Write-Warning "Could not use archive, but existing extracted Trend Micro files were found. Launching existing executable."
-            $tmTargetExe = $tmTargetExeInfo.FullName
-            Write-Host "Launching Trend Micro Uninstaller from $tmTargetExe..." -ForegroundColor Magenta
-            Set-Location -Path (Split-Path $tmTargetExe -Parent)
-            Start-Process -FilePath $tmTargetExe
-            $tmRecovered = $true
-        }
-
-        if (-not $tmRecovered) {
-            Write-Warning "Failed to prepare Trend Micro Uninstaller. Error: $($_.Exception.Message)"
-            $manualTmZip = Read-Host "Enter local path to Trend Micro ZIP (or press Enter to skip)"
-        }
-
-        if (-not $tmRecovered -and -not [string]::IsNullOrWhiteSpace($manualTmZip) -and (Test-Path $manualTmZip)) {
-            try {
-                Copy-Item -Path $manualTmZip -Destination $tmZipPath -Force
-                Write-Host "Using local ZIP. Extracting $tmZipPath..." -ForegroundColor Green
-                Expand-Archive -Path $tmZipPath -DestinationPath $tmExtractPath -Force
-
-                $tmTargetExeInfo = Get-ChildItem -Path $tmExtractPath -Filter $tmExeName -Recurse | Select-Object -First 1
-                if ($tmTargetExeInfo) {
-                    $tmTargetExe = $tmTargetExeInfo.FullName
-                    Write-Host "Launching Trend Micro Uninstaller from $tmTargetExe..." -ForegroundColor Magenta
-                    Set-Location -Path (Split-Path $tmTargetExe -Parent)
-                    Start-Process -FilePath $tmTargetExe
-
-                    Write-Host "`n[NOTICE] The Trend Micro Uninstaller has been launched in a separate window." -ForegroundColor Yellow
-                    Write-Host "Please complete the uninstallation steps in that window." -ForegroundColor Gray
-                } else {
-                    Write-Error "Could not find $tmExeName in the local ZIP archive."
-                }
-            } catch {
-                Write-Error "Failed to process local Trend Micro ZIP. Error: $_"
-            }
-        } elseif (-not $tmRecovered) {
-            Write-Host "Skipping Trend Micro Uninstaller." -ForegroundColor Yellow
-        }
-    }
+    } catch { Write-Error "Trend Micro uninstaller failed: $_" }
 }
 
 # PART 5: CrowdStrike Falcon Installer (Web Download)
@@ -512,113 +439,30 @@ if ($selectedParts -contains 5) {
     $csExtractPath = Join-Path $baseDir "CSFalcon"
     $csExeName = "QCLGU-CS-installer.exe"
     
-    # --- Fetch Latest Release via GitHub API ---
     $repoApiUrl = "https://api.github.com/repos/Justine25-debug/QCLGU/releases/latest"
     $csManualUrl = "https://github.com/Justine25-debug/QCLGU/releases/latest"
     $csGithubAssetUrl = $null
 
     try {
-        Write-Host "Fetching latest release information from GitHub..." -ForegroundColor Yellow
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
         $csAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)CS.*Falcon.*\.zip" } | Select-Object -First 1
-        if ($csAsset) {
-            $csGithubAssetUrl = $csAsset.browser_download_url
-            $csManualUrl = $latestRelease.html_url
-            Write-Host "Found latest CrowdStrike Installer: $($csAsset.name)" -ForegroundColor Green
-        } else {
-            Write-Warning "Could not find a CrowdStrike ZIP in the latest release assets."
-        }
-    } catch {
-        Write-Warning "Failed to query GitHub API for latest release. Will attempt manual fallback."
-    }
-    # -------------------------------------------
+        if ($csAsset) { $csGithubAssetUrl = $csAsset.browser_download_url }
+    } catch { }
 
     try {
         $csTargetExeInfo = Get-ChildItem -Path $csExtractPath -Filter $csExeName -Recurse | Select-Object -First 1
-
         if ($csTargetExeInfo) {
-            Write-Host "Existing CrowdStrike extracted files found. Skipping download/extraction." -ForegroundColor Green
             $csTargetExe = $csTargetExeInfo.FullName
-            Write-Host "Launching CrowdStrike Installer from $csTargetExe..." -ForegroundColor Magenta
-            Set-Location -Path (Split-Path $csTargetExe -Parent)
-            
-            # Launches the installer
-            Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
-            
-            Write-Host "`n[NOTICE] The CrowdStrike Installer has been launched in a separate window." -ForegroundColor Yellow
-            Write-Host "Please complete the installation steps in that window." -ForegroundColor Gray
-        } else {
-            Write-Host "Downloading CrowdStrike package from GitHub Release..." -ForegroundColor Magenta
-
-            $isZip = $false
-            if (Test-Path $csZipPath) {
-                if (Test-ZipFile -Path $csZipPath) {
-                    Write-Host "Existing CrowdStrike ZIP found at $csZipPath. Skipping download." -ForegroundColor Green
-                    $isZip = $true
-                } else {
-                    Write-Warning "Existing CS_Installer.zip is invalid. Re-downloading..."
-                    Remove-Item -Path $csZipPath -Force -ErrorAction SilentlyContinue
-                }
-            }
-
-            if (-not $isZip) {
-                if ($csGithubAssetUrl) {
-                    Invoke-WebRequest -Uri $csGithubAssetUrl -OutFile $csZipPath -UseBasicParsing -TimeoutSec 180 -Headers @{ "User-Agent" = "Mozilla/5.0" } -ErrorAction Stop
-                    $isZip = Test-ZipFile -Path $csZipPath
-                }
-            }
-
-            if (-not $isZip) {
-                Write-Warning "Direct GitHub request did not return a ZIP. Opening browser for manual download from release page."
-                Start-Process $csManualUrl
-                Read-Host "Download the CrowdStrike ZIP from the opened page, then press Enter to continue"
-
-                $downloadedCsZip = Get-ChildItem -Path $baseDir -Filter "*CS*Falcon*.zip" -File -ErrorAction SilentlyContinue |
-                    Sort-Object LastWriteTime -Descending |
-                    Select-Object -First 1
-
-                if (-not $downloadedCsZip) {
-                    $downloadedCsZip = Get-ChildItem -Path $baseDir -Filter "*.zip" -File -ErrorAction SilentlyContinue |
-                        Sort-Object LastWriteTime -Descending |
-                        Select-Object -First 1
-                }
-
-                if (-not $downloadedCsZip) {
-                    throw "No ZIP file found in Downloads after manual GitHub step."
-                }
-
-                Copy-Item -Path $downloadedCsZip.FullName -Destination $csZipPath -Force
-                Write-Host "Using manually downloaded ZIP: $($downloadedCsZip.FullName)" -ForegroundColor Green
-            }
-
-            Write-Host "Download complete. Extracting $csZipPath..." -ForegroundColor Green
-            Expand-Archive -Path $csZipPath -DestinationPath $csExtractPath -Force
-
-            $csTargetExeInfo = Get-ChildItem -Path $csExtractPath -Filter $csExeName -Recurse | Select-Object -First 1
-            if ($csTargetExeInfo) {
-                $csTargetExe = $csTargetExeInfo.FullName
-                Write-Host "Launching CrowdStrike Installer from $csTargetExe..." -ForegroundColor Magenta
-                Set-Location -Path (Split-Path $csTargetExe -Parent)
-                Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
-
-                Write-Host "`n[NOTICE] The CrowdStrike Installer has been launched in a separate window." -ForegroundColor Yellow
-                Write-Host "Please complete the installation steps in that window." -ForegroundColor Gray
-            } else {
-                Write-Host "Error: Could not find $csExeName within the downloaded archive." -ForegroundColor Red
-            }
-        }
-    } catch {
-        $csTargetExeInfo = Get-ChildItem -Path $csExtractPath -Filter $csExeName -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($csTargetExeInfo) {
-            Write-Warning "Could not use archive, but existing extracted CrowdStrike files were found. Launching existing executable."
-            $csTargetExe = $csTargetExeInfo.FullName
-            Write-Host "Launching CrowdStrike Installer from $csTargetExe..." -ForegroundColor Magenta
-            Set-Location -Path (Split-Path $csTargetExe -Parent)
             Start-Process -FilePath $csTargetExe -WorkingDirectory (Split-Path $csTargetExe -Parent) -Verb RunAs
         } else {
-            Write-Error "Failed to prepare or execute CrowdStrike Installer. Error: $_"
+            if ($csGithubAssetUrl) {
+                Invoke-WebRequest -Uri $csGithubAssetUrl -OutFile $csZipPath -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+                Expand-Archive -Path $csZipPath -DestinationPath $csExtractPath -Force
+                $csTargetExeInfo = Get-ChildItem -Path $csExtractPath -Filter $csExeName -Recurse | Select-Object -First 1
+                if ($csTargetExeInfo) { Start-Process -FilePath $csTargetExeInfo.FullName -Verb RunAs }
+            }
         }
-    }
+    } catch { Write-Error "CrowdStrike installer failed: $_" }
 }
 
 # PART 6: Admin Rename & User Creation
@@ -626,59 +470,32 @@ if ($selectedParts -contains 6) {
     Write-Host "`n--- Executing Admin Rename & User Creation ---" -ForegroundColor Cyan
 
     $CurrentAdminName = Read-Host "Enter the current local admin name to rename (Press Enter to default to 'CAO-2026')"
-    if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) {
-        $CurrentAdminName = "CAO-2026"
-    }
+    if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) { $CurrentAdminName = "CAO-2026" }
 
     $AdminName = "QCSYSADMIN"
     $UserName = "QCUSER"
     $AdminPass = ConvertTo-SecureString "QCqmc*0819(" -AsPlainText -Force
     $UserPass = ConvertTo-SecureString "saqclahatpanalo" -AsPlainText -Force
 
-    # --- RENAME THE BUILT-IN ADMINISTRATOR ---
-    Write-Host "Step 1: Renaming '$CurrentAdminName' to '$AdminName'..." -NoNewline
     if (Get-LocalUser -Name $CurrentAdminName -ErrorAction SilentlyContinue) {
         try {
             Rename-LocalUser -Name $CurrentAdminName -NewName $AdminName 
-            Write-Host " [SUCCESS]" -ForegroundColor Green
-            
             Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
-        }
-        catch {
-            Write-Host " [FAILED]" -ForegroundColor Red
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Gray
-        }
-    } else {
-        Write-Host " [SKIP]" -ForegroundColor Yellow
-        Write-Host "Note: Account '$CurrentAdminName' not found. It may have been renamed already."
+            Write-Host " [SUCCESS] Admin Renamed." -ForegroundColor Green
+        } catch { Write-Error "Rename Failed: $_" }
     }
 
-    # --- CREATE THE STANDARD USER ---
-    Write-Host "Step 2: Creating Standard User '$UserName'..." -NoNewline
     if (!(Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
         try {
             New-LocalUser -Name $UserName -Password $UserPass -FullName "Quezon City User" -Description "Created via Script"
             Add-LocalGroupMember -Group "Administrators" -Member $UserName
-            Write-Host " [SUCCESS]" -ForegroundColor Green
-        }
-        catch {
-            Write-Host " [FAILED]" -ForegroundColor Red
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Gray
-        }
-    } else {
-        Write-Host " [SKIP]" -ForegroundColor Yellow
-        Write-Host "Note: User '$UserName' already exists."
+            Write-Host " [SUCCESS] $UserName Created." -ForegroundColor Green
+        } catch { Write-Error "User Creation Failed: $_" }
     }
 }
 
 Write-Host "`n--- All Tasks Completed ---" -ForegroundColor Cyan
-
     $runAgain = Read-Host "Return to task menu? (Y/N)"
-    if ($runAgain -match '^[Yy]$') {
-        Clear-Host
-        continue
-    }
+    if ($runAgain -match '^[Yy]$') { Clear-Host; continue }
     break
 } while ($true)
-
-Write-Host "Exiting automation menu." -ForegroundColor Cyan

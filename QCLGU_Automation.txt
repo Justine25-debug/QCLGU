@@ -85,6 +85,7 @@ do {
     Write-Host "[3] HP Wolf Security Uninstaller"
     Write-Host "[4] Trend Micro Uninstaller"
     Write-Host "[5] CrowdStrike Falcon Installer"
+    Write-Host "[6] Admin Rename & User Creation"
     Write-Host "[A] Run All"
     Write-Host "[Q] Quit"
 
@@ -94,11 +95,11 @@ do {
     $selectedParts = @()
 
     if ($selectionInput -match '^[Aa]$') {
-        $selectedParts = 1..5
+        $selectedParts = 1..6
     } else {
         $selectedParts = $selectionInput -split ',' |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -match '^[1-5]$' } |
+            Where-Object { $_ -match '^[1-6]$' } |
             ForEach-Object { [int]$_ } |
             Select-Object -Unique
     }
@@ -617,6 +618,56 @@ if ($selectedParts -contains 5) {
         } else {
             Write-Error "Failed to prepare or execute CrowdStrike Installer. Error: $_"
         }
+    }
+}
+
+# PART 6: Admin Rename & User Creation
+if ($selectedParts -contains 6) {
+    Write-Host "`n--- Executing Admin Rename & User Creation ---" -ForegroundColor Cyan
+
+    $CurrentAdminName = Read-Host "Enter the current local admin name to rename (Press Enter to default to 'CAO-2026')"
+    if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) {
+        $CurrentAdminName = "CAO-2026"
+    }
+
+    $AdminName = "QCSYSADMIN"
+    $UserName = "QCUSER"
+    $AdminPass = ConvertTo-SecureString "QCqmc*0819(" -AsPlainText -Force
+    $UserPass = ConvertTo-SecureString "saqclahatpanalo" -AsPlainText -Force
+
+    # --- RENAME THE BUILT-IN ADMINISTRATOR ---
+    Write-Host "Step 1: Renaming '$CurrentAdminName' to '$AdminName'..." -NoNewline
+    if (Get-LocalUser -Name $CurrentAdminName -ErrorAction SilentlyContinue) {
+        try {
+            Rename-LocalUser -Name $CurrentAdminName -NewName $AdminName 
+            Write-Host " [SUCCESS]" -ForegroundColor Green
+            
+            Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
+        }
+        catch {
+            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host " [SKIP]" -ForegroundColor Yellow
+        Write-Host "Note: Account '$CurrentAdminName' not found. It may have been renamed already."
+    }
+
+    # --- CREATE THE STANDARD USER ---
+    Write-Host "Step 2: Creating Standard User '$UserName'..." -NoNewline
+    if (!(Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
+        try {
+            New-LocalUser -Name $UserName -Password $UserPass -FullName "Quezon City User" -Description "Created via Script"
+            Add-LocalGroupMember -Group "Administrators" -Member $UserName
+            Write-Host " [SUCCESS]" -ForegroundColor Green
+        }
+        catch {
+            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host " [SKIP]" -ForegroundColor Yellow
+        Write-Host "Note: User '$UserName' already exists."
     }
 }
 

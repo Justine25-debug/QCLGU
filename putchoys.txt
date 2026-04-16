@@ -459,7 +459,7 @@ if ($selectedParts -contains 5) {
     $repoApiUrl = "https://api.github.com/repos/Justine25-debug/putchoyauto/releases/latest"
     $csGithubAssetUrl = $null
     $csCidFileName = "CrowdstrikeCustomerID.txt"
-    $csCidUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/refs/heads/main/CrowdstrikeCustomerID.txt"
+    $csCidUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/main/CrowdstrikeCustomerID.txt"
     try {
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
         # Updated asset search to match: FalconSensor_Windows.zip
@@ -470,8 +470,7 @@ if ($selectedParts -contains 5) {
     try {
         try {
             Write-Host "Retrieving CrowdStrike customer ID file content from remote source..." -ForegroundColor Yellow
-            $csCidResponse = Invoke-WebRequest -Uri $csCidUrl -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
-            $csCidText = $csCidResponse.Content.Trim()
+            $csCidText = (Invoke-RestMethod -Uri $csCidUrl -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop).Trim()
             if ($csCidText) {
                 Write-Host "CrowdStrike Customer ID file content (remote):" -ForegroundColor Cyan
                 Write-Host $csCidText -ForegroundColor Green

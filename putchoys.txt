@@ -459,15 +459,30 @@ if ($selectedParts -contains 5) {
     $repoApiUrl = "https://api.github.com/repos/Justine25-debug/putchoyauto/releases/latest"
     $csManualUrl = "https://github.com/Justine25-debug/putchoyauto/releases/latest"
     $csGithubAssetUrl = $null
+    $csCidGithubAssetUrl = $null
+    $csCidAssetName = $null
 
     try {
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
         # Updated asset search to match: FalconSensor_Windows.zip
         $csAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)FalconSensor.*\.zip" } | Select-Object -First 1
         if ($csAsset) { $csGithubAssetUrl = $csAsset.browser_download_url }
+        $csCidAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)(customer.*id|cid).*\.txt$" } | Select-Object -First 1
+        if ($csCidAsset) {
+            $csCidGithubAssetUrl = $csCidAsset.browser_download_url
+            $csCidAssetName = $csCidAsset.name
+        }
     } catch { }
 
     try {
+        if ($csCidGithubAssetUrl -and $csCidAssetName) {
+            $csCidPath = Join-Path $baseDir $csCidAssetName
+            if (-not (Test-Path -LiteralPath $csCidPath)) {
+                Write-Host "Downloading CrowdStrike customer ID file..." -ForegroundColor Magenta
+                Invoke-WebRequest -Uri $csCidGithubAssetUrl -OutFile $csCidPath -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+            }
+        }
+
         # Check if already extracted
         $csTargetExeInfo = Get-ChildItem -Path $csExtractPath -Filter "*.exe" -Recurse | Select-Object -First 1
         

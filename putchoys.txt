@@ -478,7 +478,18 @@ if ($selectedParts -contains 5) {
         }
         if ($csCidNeedsDownload) {
             Write-Host "Downloading CrowdStrike customer ID file from repository..." -ForegroundColor Magenta
-            Invoke-WebRequest -Uri $csCidRawUrl -OutFile $csCidPath -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            $maxCidDownloadAttempts = 2
+            $cidRetryDelaySeconds = 2
+            $csCidDownloaded = $false
+            for ($attempt = 1; $attempt -le $maxCidDownloadAttempts -and -not $csCidDownloaded; $attempt++) {
+                try {
+                    Invoke-WebRequest -Uri $csCidRawUrl -OutFile $csCidPath -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+                    $csCidDownloaded = $true
+                } catch {
+                    if ($attempt -lt $maxCidDownloadAttempts) { Start-Sleep -Seconds $cidRetryDelaySeconds }
+                    else { Write-Warning "Failed to download CrowdStrike customer ID file '$csCidFileName' from repository (${csCidRawUrl}): $($_.Exception.Message)" }
+                }
+            }
         }
 
         if (Test-Path -LiteralPath $csCidPath) {

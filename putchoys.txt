@@ -477,7 +477,7 @@ if ($selectedParts -contains 5) {
                 Write-Warning "CrowdStrike customer ID file '$csCidFileName' is empty."
             }
         } else {
-            Write-Warning "CrowdStrike customer ID file '$csCidFileName' was not found in the repository path: $csCidPath"
+            Write-Warning "CrowdStrike customer ID file '$csCidFileName' was not found in the repository path: $csCidPath. Please ensure '$csCidFileName' exists in the repository root directory."
         }
 
         # Check if already extracted

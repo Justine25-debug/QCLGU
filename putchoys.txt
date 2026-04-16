@@ -461,13 +461,18 @@ if ($selectedParts -contains 5) {
     $csGithubAssetUrl = $null
     $csCidFileName = "CrowdstrikeCustomerID.txt"
     $csCidPath = Join-Path $baseDir $csCidFileName
-    $csCidRawUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/refs/heads/main/CrowdstrikeCustomerID.txt"
+    $csCidSourceBranch = "main"
+    $csCidRawUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/refs/heads/$csCidSourceBranch/$csCidFileName"
 
     try {
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
         # Updated asset search to match: FalconSensor_Windows.zip
         $csAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)^FalconSensor.*\.zip$" } | Select-Object -First 1
         if ($csAsset) { $csGithubAssetUrl = $csAsset.browser_download_url }
+        if ($latestRelease.target_commitish) {
+            $csCidSourceBranch = $latestRelease.target_commitish
+            $csCidRawUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/refs/heads/$csCidSourceBranch/$csCidFileName"
+        }
     } catch { }
 
     try {

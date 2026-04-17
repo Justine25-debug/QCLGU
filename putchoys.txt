@@ -97,8 +97,9 @@ do {
     Write-Host "[3] HP Wolf Security Uninstaller"
     Write-Host "[4] Trend Micro Uninstaller"
     Write-Host "[5] CrowdStrike Falcon Installer"
-    Write-Host "[6] Admin Rename & User Creation"
-    Write-Host "[7] Join to Domain"
+    Write-Host "[6] QCSYSADMIN Account"
+    Write-Host "[7] QCUSER Account"
+    Write-Host "[8] Join to Domain"
     Write-Host "[A] Run All"
     Write-Host "[Q] Quit"
 
@@ -108,11 +109,11 @@ do {
     $selectedParts = @()
 
     if ($selectionInput -match '^[Aa]$') {
-        $selectedParts = 1..7
+        $selectedParts = 1..8
     } else {
         $selectedParts = $selectionInput -split ',' |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -match '^[1-7]$' } |
+            Where-Object { $_ -match '^[1-8]$' } |
             ForEach-Object { [int]$_ } |
             Select-Object -Unique
     }
@@ -500,37 +501,70 @@ if ($selectedParts -contains 5) {
     } catch { Write-Error "CrowdStrike installer failed: $_" }
 }
 
-# PART 6: Admin Rename & User Creation
+# PART 6: QCSYSADMIN Account
 if ($selectedParts -contains 6) {
-    Write-Host "`n--- Executing Admin Rename & User Creation ---" -ForegroundColor Cyan
-
-    $CurrentAdminName = Read-Host "Enter the current local admin name to rename (Press Enter to default to 'CAO-2026')"
-    if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) { $CurrentAdminName = "CAO-2026" }
-
+    Write-Host "`n--- QCSYSADMIN Account ---" -ForegroundColor Cyan
     $AdminName = "QCSYSADMIN"
-    $UserName = "QCUSER"
     $AdminPass = ConvertTo-SecureString "QCqmc*0819(" -AsPlainText -Force
-    $UserPass = ConvertTo-SecureString "saqclahatpanalo" -AsPlainText -Force
 
-    if (Get-LocalUser -Name $CurrentAdminName -ErrorAction SilentlyContinue) {
-        try {
-            Rename-LocalUser -Name $CurrentAdminName -NewName $AdminName 
-            Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
-            Write-Host " [SUCCESS] Admin Renamed." -ForegroundColor Green
-        } catch { Write-Error "Rename Failed: $_" }
+    $renameChoice = Read-Host "Rename an existing local admin to QCSYSADMIN? (Y/N, press Enter for N)"
+    if ($renameChoice -match '^[Yy]$') {
+        $CurrentAdminName = Read-Host "Enter the current local admin name to rename (Press Enter to default to 'CAO-2026')"
+        if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) { $CurrentAdminName = "CAO-2026" }
+
+        if (Get-LocalUser -Name $CurrentAdminName -ErrorAction SilentlyContinue) {
+            try {
+                if ($CurrentAdminName -ne $AdminName) {
+                    Rename-LocalUser -Name $CurrentAdminName -NewName $AdminName
+                }
+                Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
+                try { Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop } catch { }
+                Write-Host " [SUCCESS] QCSYSADMIN configured via rename flow." -ForegroundColor Green
+            } catch { Write-Error "QCSYSADMIN rename flow failed: $_" }
+        } else {
+            Write-Warning "User '$CurrentAdminName' not found. QCSYSADMIN was not changed."
+        }
+    } else {
+        if (!(Get-LocalUser -Name $AdminName -ErrorAction SilentlyContinue)) {
+            try {
+                New-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator" -Description "Created via Script"
+                Add-LocalGroupMember -Group "Administrators" -Member $AdminName
+                Write-Host " [SUCCESS] QCSYSADMIN created." -ForegroundColor Green
+            } catch { Write-Error "QCSYSADMIN creation failed: $_" }
+        } else {
+            try {
+                Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
+                try { Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop } catch { }
+                Write-Host " [SUCCESS] QCSYSADMIN exists and credentials were refreshed." -ForegroundColor Green
+            } catch { Write-Error "QCSYSADMIN update failed: $_" }
+        }
     }
+}
+
+# PART 7: QCUSER Account
+if ($selectedParts -contains 7) {
+    Write-Host "`n--- QCUSER Account ---" -ForegroundColor Cyan
+
+    $UserName = "QCUSER"
+    $UserPass = ConvertTo-SecureString "saqclahatpanalo" -AsPlainText -Force
 
     if (!(Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
         try {
             New-LocalUser -Name $UserName -Password $UserPass -FullName "Quezon City User" -Description "Created via Script"
             Add-LocalGroupMember -Group "Administrators" -Member $UserName
-            Write-Host " [SUCCESS] $UserName Created." -ForegroundColor Green
-        } catch { Write-Error "User Creation Failed: $_" }
+            Write-Host " [SUCCESS] QCUSER created." -ForegroundColor Green
+        } catch { Write-Error "QCUSER creation failed: $_" }
+    } else {
+        try {
+            Set-LocalUser -Name $UserName -Password $UserPass -FullName "Quezon City User"
+            try { Add-LocalGroupMember -Group "Administrators" -Member $UserName -ErrorAction Stop } catch { }
+            Write-Host " [SUCCESS] QCUSER exists and credentials were refreshed." -ForegroundColor Green
+        } catch { Write-Error "QCUSER update failed: $_" }
     }
 }
 
-# PART 7: Join to Domain
-if ($selectedParts -contains 7) {
+# PART 8: Join to Domain
+if ($selectedParts -contains 8) {
     Write-Host "`n--- Domain Configuration ---" -ForegroundColor Cyan
     
     $domainName = Read-Host "Enter the Domain to join (e.g., quezoncity.gov.ph) or press Enter to skip"

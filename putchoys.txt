@@ -520,7 +520,11 @@ if ($selectedParts -contains 6) {
                     Write-Host "QCSYSADMIN is already the current admin name. Skipping rename step." -ForegroundColor Yellow
                 }
                 Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
-                try { Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop } catch { }
+                try {
+                    Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop
+                } catch {
+                    Write-Warning "Could not add $AdminName to Administrators (possibly already a member): $($_.Exception.Message)"
+                }
                 Write-Host " [SUCCESS] QCSYSADMIN configured via rename flow." -ForegroundColor Green
             } catch { Write-Error "QCSYSADMIN rename flow failed: $_" }
         } else {
@@ -536,7 +540,11 @@ if ($selectedParts -contains 6) {
         } else {
             try {
                 Set-LocalUser -Name $AdminName -Password $AdminPass -FullName "QC IT Administrator"
-                try { Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop } catch { }
+                try {
+                    Add-LocalGroupMember -Group "Administrators" -Member $AdminName -ErrorAction Stop
+                } catch {
+                    Write-Warning "Could not add $AdminName to Administrators (possibly already a member): $($_.Exception.Message)"
+                }
                 Write-Host " [SUCCESS] QCSYSADMIN exists and credentials were refreshed." -ForegroundColor Green
             } catch { Write-Error "QCSYSADMIN update failed: $_" }
         }
@@ -559,7 +567,11 @@ if ($selectedParts -contains 7) {
     } else {
         try {
             Set-LocalUser -Name $UserName -Password $UserPass -FullName "Quezon City User"
-            try { Add-LocalGroupMember -Group "Administrators" -Member $UserName -ErrorAction Stop } catch { }
+            try {
+                Add-LocalGroupMember -Group "Administrators" -Member $UserName -ErrorAction Stop
+            } catch {
+                Write-Warning "Could not add $UserName to Administrators (possibly already a member): $($_.Exception.Message)"
+            }
             Write-Host " [SUCCESS] QCUSER exists and credentials were refreshed." -ForegroundColor Green
         } catch { Write-Error "QCUSER update failed: $_" }
     }

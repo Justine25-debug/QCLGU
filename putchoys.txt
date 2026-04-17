@@ -507,7 +507,7 @@ if ($selectedParts -contains 6) {
     $AdminName = "QCSYSADMIN"
     $AdminPass = ConvertTo-SecureString "QCqmc*0819(" -AsPlainText -Force
 
-    $renameChoice = Read-Host "Rename an existing local admin to QCSYSADMIN? (Y to rename, any other input = No)"
+    $renameChoice = Read-Host "Rename an existing local admin to QCSYSADMIN? (Y/y to rename, anything else = add/update)"
     if ($renameChoice -match '^[Yy]$') {
         $CurrentAdminName = Read-Host "Enter the current local admin name to rename (Press Enter to default to 'CAO-2026')"
         if ([string]::IsNullOrWhiteSpace($CurrentAdminName)) { $CurrentAdminName = "CAO-2026" }
@@ -524,7 +524,7 @@ if ($selectedParts -contains 6) {
                 Write-Host " [SUCCESS] QCSYSADMIN configured via rename flow." -ForegroundColor Green
             } catch { Write-Error "QCSYSADMIN rename flow failed: $_" }
         } else {
-            Write-Warning "Cannot rename: user '$CurrentAdminName' was not found. No changes made to QCSYSADMIN."
+            Write-Warning "Cannot rename: user '$CurrentAdminName' was not found. QCSYSADMIN operation was skipped."
         }
     } else {
         if (!(Get-LocalUser -Name $AdminName -ErrorAction SilentlyContinue)) {

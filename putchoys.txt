@@ -2,9 +2,6 @@
 @echo off
 setlocal
 
-:: =====================================================================
-:: COMMAND PROMPT SECTION (The Wrapper)
-:: =====================================================================
 :: 1. Check for Administrator privileges in CMD
 net session >nul 2>&1
 if %errorLevel% NEQ 0 (
@@ -15,19 +12,14 @@ if %errorLevel% NEQ 0 (
     exit /b
 )
 
-:: 2. Execute the PowerShell portion below while bypassing Execution Policies
+:: 2. Bypassing Execution Policies
 echo [INFO] Launching script engine...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-Content '%~f0' -Raw)"
 
-:: 3. Keep the CMD window open after the script finishes
 echo.
 pause
 exit /b
 #>
-
-# =====================================================================
-# POWERSHELL SECTION (The Engine)
-# =====================================================================
 
 # --- Helper Function for ZIP Verification ---
 function Test-ZipFile {
@@ -53,7 +45,7 @@ function Test-ZipFile {
     }
 }
 
-# --- Global Directory Setup ---
+# --- Directory Setup ---
 $baseDir = Join-Path $env:USERPROFILE "Downloads"
 Write-Host "`n--- Setting up Base Directory ---" -ForegroundColor Cyan
 Write-Host "Using base directory at: $baseDir" -ForegroundColor Green
@@ -119,7 +111,7 @@ do {
 
     Clear-Host
 
-# PART 1: Change Hostname
+# Change Hostname
 if ($selectedParts -contains 1) {
     Write-Host "`n--- Hostname Configuration ---" -ForegroundColor Cyan
     Write-Host "Current Hostname: $currentHostName" -ForegroundColor Yellow
@@ -143,11 +135,10 @@ if ($selectedParts -contains 1) {
     }
 }
 
-# PART 2: AV / VPN / Bloatware Cross-Reference & Uninstaller
+# Flagged Apps Uninstaller
 if ($selectedParts -contains 2) {
     Write-Host "`n--- Loading Installed Applications ---" -ForegroundColor Cyan
 
-    # Updated URL to your new repository path
     $blocklistUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/refs/heads/main/Uninstall_List.txt"
     $blockKeywords = @()
     try {
@@ -301,7 +292,7 @@ if ($selectedParts -contains 2) {
     }
 }
 
-# PART 3: HP Wolf Security Uninstaller (WMIC-Free Edition)
+# HP Wolf Security Uninstaller
 if ($selectedParts -contains 3) {
     Write-Host "`n--- HP Wolf Security Uninstaller Section ---" -ForegroundColor Cyan
     Write-Host "Attempting to uninstall HP Wolf Security components in required order..." -ForegroundColor Magenta
@@ -369,14 +360,14 @@ if ($selectedParts -contains 3) {
     Write-Host "`nHP Wolf Security uninstallation sequence complete. A reboot may be required." -ForegroundColor Yellow
 }
 
-# PART 4: Trend Micro Custom Uninstaller (Web Download)
+# Trend Micro Uninstaller
 if ($selectedParts -contains 4) {
     Write-Host "`n--- Trend Micro Uninstaller Section ---" -ForegroundColor Cyan
     $tmZipPath = Join-Path $baseDir "TM_Uninstaller.zip"
     $tmExtractPath = Join-Path $baseDir "TMUNINSTALL"
     $tmExeName = "V1ESUninstallTool.exe"
 
-    # --- Fetch Latest Release via GitHub API (Updated Repo) ---
+    # --- Fetch Latest Release via GitHub API ---
     $repoApiUrl = "https://api.github.com/repos/Justine25-debug/putchoyauto/releases/latest"
     $tmManualUrl = "https://github.com/Justine25-debug/putchoyauto/releases/latest"
     $tmGithubAssetUrl = $null
@@ -384,7 +375,7 @@ if ($selectedParts -contains 4) {
     try {
         Write-Host "Fetching latest release information from GitHub..." -ForegroundColor Yellow
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
-        # Match your ZIP name logic from the image (TM.Uninstall.-.April.08.2026.zip)
+        # Match ZIP name (TM.Uninstall.-.April.08.2026.zip)
         $tmAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)TM.*Uninstall.*\.zip" } | Select-Object -First 1
         if ($tmAsset) {
             $tmGithubAssetUrl = $tmAsset.browser_download_url
@@ -444,13 +435,13 @@ if ($selectedParts -contains 4) {
     } catch { Write-Error "Trend Micro uninstaller failed: $_" }
 }
 
-# PART 5: CrowdStrike Falcon Installer (Web Download)
+# CrowdStrike Falcon Installer
 if ($selectedParts -contains 5) {
     Write-Host "`n--- CrowdStrike Falcon Installer Section ---" -ForegroundColor Cyan
     $csZipPath = Join-Path $baseDir "FalconSensor_Windows.zip"
     $csExtractPath = Join-Path $baseDir "CSFalcon"
     
-    # Updated Repo and API links
+    # Repo link
     $repoApiUrl = "https://api.github.com/repos/Justine25-debug/putchoyauto/releases/latest"
     $csGithubAssetUrl = $null
     $csCidUrl = "https://raw.githubusercontent.com/Justine25-debug/putchoyauto/main/CrowdstrikeCustomerID.txt"
@@ -495,7 +486,7 @@ if ($selectedParts -contains 5) {
     } catch { Write-Error "CrowdStrike installer failed: $_" }
 }
 
-# PART 6: QCSYSADMIN | QCUSER Account Creation
+# QCSYSADMIN | QCUSER Account Creation
 if ($selectedParts -contains 6) {
     Write-Host "`n--- QCSYSADMIN | QCUSER Account Creation ---" -ForegroundColor Cyan
 

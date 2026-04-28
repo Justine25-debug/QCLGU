@@ -454,7 +454,7 @@ if ($selectedParts -contains 5) {
     try {
         $latestRelease = Invoke-RestMethod -Uri $repoApiUrl -UseBasicParsing -ErrorAction Stop
         # Updated asset search to match: FalconSensor_Windows.zip
-        $csAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)^FalconSensor.*\.zip$" } | Select-Object -First 1
+        $csAsset = $latestRelease.assets | Where-Object { $_.name -match "(?i)(falcon|crowdstrike).*\.zip$" } | Select-Object -First 1
         if ($csAsset) { $csGithubAssetUrl = $csAsset.browser_download_url }
     } catch { }
 
